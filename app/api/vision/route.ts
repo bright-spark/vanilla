@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    const { messages, model = '@cf/meta/llama-3.2-11b-vision-instruct' } = await req.json();
+    const { messages, model = '@cf/meta/llama-4-scout-17b-16e-instruct' } = await req.json();
 
     if (!process.env.OPENAI_API_KEY) {
       return new Response(
