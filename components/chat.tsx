@@ -267,7 +267,7 @@ export function Chat() {
           {/* Greeting row */}
           <div className="flex flex-row items-center justify-center gap-2 w-full">
             <span className="text-[#f97316] text-6xl">✻</span>
-            <span className={`text-5xl md:text-6xl font-serif font-semibold tracking-tight text-center ${theme === 'dark' ? 'text-white' : 'text-neutral-900'}`}>It's, me.</span>
+            <span className={`text-5xl md:text-6xl font-serif font-semibold tracking-tight text-center ${theme === 'dark' ? 'text-white' : 'text-neutral-900'}`}>It's me, Kiki.</span>
           </div>
           {/* Subtitle */}
           <div className={`text-lg text-center ${theme === 'dark' ? 'text-neutral-200' : 'text-neutral-700'}`}></div>

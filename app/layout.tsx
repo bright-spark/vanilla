@@ -7,8 +7,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "RedBuilder Chat",
-  description: "AI Chat Agent powered by RedBuilder API",
+  title: "Kiki",
+  description: "A clever girl that wants to learn.",
 };
 
 export default function RootLayout({
