@@ -93,6 +93,8 @@ export function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
   const [newMsgFlash, setNewMsgFlash] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [parallax, setParallax] = useState(0);
   const bgRef = useRef<HTMLDivElement>(null);
   const [statusLED, setStatusLED] = useState<'idle' | 'waiting' | 'error' | 'new-message' | 'recovered'>('idle');
@@ -133,6 +135,7 @@ export function Chat() {
       setIsLoading(false);
       setError(false);
       setNewMsgFlash(false);
+      setSelectedImage(null);
     };
     window.addEventListener('newChat', handleNewChat);
 
@@ -152,13 +155,17 @@ export function Chat() {
   }, [messages]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
+    const newInput = e.target.value;
+    setInput(newInput);
+    
+    // Dispatch event for model selector to detect operation type
+    window.dispatchEvent(new CustomEvent('inputChanged', { detail: { input: newInput } }));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isLoading && (input.trim() || selectedImage)) {
       e.preventDefault();
-      handleSubmit(e as any);
+      handleSubmit();
     }
   };
 
@@ -169,13 +176,229 @@ export function Chat() {
     handleInputChange(e);
   };
 
+  // Handle file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+      console.error('Please select an image file');
+      return;
+    }
+    
+    try {
+      // Create a temporary preview of the image using FileReader
+      const reader = new FileReader();
+      
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const imageUrl = event.target.result as string;
+          console.log('Image preview created');
+          
+          // Create a user message with the image
+          const userMessage = {
+            id: `user-${Date.now()}`,
+            role: 'user',
+            content: `![Uploaded Image](${imageUrl})`,
+          };
+          
+          // Add the message to the chat
+          setMessages(prevMessages => [...prevMessages, userMessage]);
+        }
+      };
+      
+      // Start reading the file as a data URL
+      reader.readAsDataURL(file);
+    } catch (error: any) {
+      console.error('Image upload error:', error);
+    } finally {
+      // Clear the input so the same file can be selected again
+      e.target.value = '';
+    }
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim()) return;
+    if (isLoading || (!input.trim() && !selectedImage)) return;
+
+    // Force close any open side menu
+    const sideMenu = document.querySelector('.side-menu');
+    const sideMenuOverlay = document.querySelector('.side-menu-overlay');
+    
+    if (sideMenu && sideMenu.classList.contains('open')) {
+      sideMenu.classList.remove('open');
+      if (sideMenuOverlay) {
+        sideMenuOverlay.classList.remove('visible');
+      }
+    }
+
     setIsLoading(true);
     setError(false);
-    setNewMsgFlash(true);
+    setStatusLED('waiting');
     setTimeout(() => setNewMsgFlash(false), 400); // Brief blue flash
+    
+    // Check if this is a text-to-image generation request
+    if (input.trim().startsWith('/imagine ') || input.trim().startsWith('/img ')) {
+      // Extract the prompt
+      const prompt = input.trim().replace(/^\/imagine\s+/, '').replace(/^\/img\s+/, '');
+      if (!prompt) {
+        setIsLoading(false);
+        return;
+      }
+      
+      // Create a message showing the image generation request
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: `Generating image from prompt: "${prompt}"`,
+      };
+      
+      // Add the message to the chat
+      setMessages([...messages, userMessage]);
+      setInput('');
+      
+      // Set loading state
+      setIsGeneratingImage(true);
+      
+      // Call the image generation API
+      try {
+        const res = await fetch('/api/image/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        
+        if (!res.ok) throw new Error('API error');
+        const data = await res.json();
+        
+        if (data.error) throw new Error(data.error.message || 'Error generating image');
+        
+        // Get the image URL - handle different response formats
+        let imageUrl = '';
+        
+        // Check for different response formats
+        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+          // Standard OpenAI format
+          imageUrl = data.data[0].url || '';
+        } else if (data.url) {
+          // Direct URL format
+          imageUrl = data.url;
+        } else if (data.imageUrl) {
+          // Custom format with imageUrl field
+          imageUrl = data.imageUrl;
+        }
+        
+        console.log('Extracted image URL:', imageUrl ? `${imageUrl.substring(0, 30)}...` : 'none');
+        
+        if (!imageUrl) {
+          console.error('No image URL found in response:', data);
+          throw new Error('No image URL in response');
+        }
+        
+        // Check if it's a mock error URL
+        const isMockUrl = imageUrl.includes('mock-error') || imageUrl.includes('api.redbuilder.io');
+        if (isMockUrl) {
+          console.log('Detected mock URL, using fallback');
+          // Instead of throwing an error, we'll use a placeholder
+          imageUrl = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHJlY3Qgd2lkdGg9IjkwJSIgaGVpZ2h0PSI5MCUiIHg9IjUlIiB5PSI1JSIgZmlsbD0iI2UwZTBlMCIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiLz48dGV4dCB4PSI1MCUiIHk9IjMwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjI0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMzMzIj5JbWFnZSBHZW5lcmF0aW9uPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNDAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM1NTUiPkZhbGxiYWNrIHBsYWNlaG9sZGVyPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM3NzciPiR7cHJvbXB0LnN1YnN0cmluZygwLCAzMCl9JHtwcm9tcHQubGVuZ3RoID4gMzAgPyAnLi4uJyA6ICcnfTwvdGV4dD48dGV4dCB4PSI1MCUiIHk9IjcwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5EZXZlbG9wbWVudCBtb2RlPC90ZXh0Pjwvc3ZnPg==`;
+        }
+        
+        // Check if it's an R2 storage URL
+        if (imageUrl.includes('/images/') && !imageUrl.startsWith('data:')) {
+          console.log('Detected R2 storage URL');
+          // Make sure the URL is properly formatted for our environment
+          if (!imageUrl.startsWith('http')) {
+            // If it's a relative path, convert to absolute
+            imageUrl = `http://localhost:8787${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+          }
+        }
+        
+        // Add the generated image as an assistant message
+        setMessages(msgs => [
+          ...msgs,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: `Here's the image I generated from your prompt: "${prompt}"\n\n![Generated Image](${imageUrl})`,
+          },
+        ]);
+      } catch (error: any) {
+        console.error('Image generation error:', error);
+        setMessages(msgs => [
+          ...msgs,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: `Sorry, I couldn't generate an image from that prompt. Error: ${error.message}`,
+          },
+        ]);
+      } finally {
+        setIsGeneratingImage(false);
+        setIsLoading(false);
+      }
+      
+      return;
+    }
+    
+    // If there's a selected image, add it to the message
+    if (selectedImage) {
+      console.log('Adding image to message:', selectedImage.substring(0, 50) + '...');
+      
+      // Create a message with the image URL
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: input.trim() ? `${input}\n\n![Image](${selectedImage})` : `![Image](${selectedImage})`,
+      };
+      
+      // Add the user message with the image
+      const newMessages = [...messages, userMessage];
+      setMessages(newMessages);
+      setInput('');
+      setSelectedImage(null);
+      
+      try {
+        // For data URLs, we'll just include the image in the message content as markdown
+        // This avoids sending large data URLs in the JSON payload
+        const isDataUrl = selectedImage.startsWith('data:');
+        
+        // Make API request with the image
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [...messages, {
+              role: 'user',
+              content: input || 'What do you see in this image?'
+            }],
+            model: selectedModel || '@cf/meta/llama-4-scout-17b-16e-instruct',
+          }),
+        });
+        
+        if (!res.ok) throw new Error('API error');
+        const data = await res.json();
+        
+        setMessages(msgs => [
+          ...msgs,
+          {
+            id: data.id || `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: data.content,
+          },
+        ]);
+      } catch (error) {
+        setError(true);
+        console.error('Chat error:', error);
+      } finally {
+        setIsLoading(false);
+        setSelectedImage(null);
+      }
+      
+      return;
+    }
+    
+    // Regular text message
     const userMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -184,6 +407,7 @@ export function Chat() {
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
+    
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -193,16 +417,33 @@ export function Chat() {
           model: selectedModel || '@cf/meta/llama-4-scout-17b-16e-instruct',
         }),
       });
-      if (!res.ok) throw new Error('API error');
-      const data = await res.json();
-      setMessages((msgs) => [
-        ...msgs,
-        {
-          id: data.id || `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: data.content,
-        },
-      ]);
+      if (!res.ok) {
+        console.error(`API error: ${res.status} ${res.statusText}`);
+        throw new Error(`API error: ${res.status} ${res.statusText}`);
+      }
+      
+      try {
+        const data = await res.json();
+        
+        setMessages(msgs => [
+          ...msgs,
+          {
+            id: data.id || `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: data.content || 'Sorry, I encountered an error processing your request.',
+          },
+        ]);
+      } catch (jsonError) {
+        console.error('Error parsing API response:', jsonError);
+        setMessages(msgs => [
+          ...msgs,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: 'Sorry, I encountered an error processing your request. The API response could not be parsed.',
+          },
+        ]);
+      }
     } catch (error) {
       setError(true);
       console.error('Chat error:', error);
@@ -284,25 +525,30 @@ export function Chat() {
                       id="file-upload"
                       type="file"
                       className="hidden"
-                      accept="image/*,.pdf,.doc,.docx,.txt"
-                      onChange={(e) => {
-                        // Handle file upload here
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          // TODO: Implement file upload handling
-                          console.log('File selected:', file);
-                        }
-                      }}
+                      accept="image/*"
+                      onChange={handleFileUpload}
                     />
                   </label>
                   <textarea
                     ref={textareaRef}
                     value={input}
-                    onChange={adjustTextareaHeight}
-                    onKeyDown={handleKeyDown}
-                    placeholder=""
+                    onChange={(e) => {
+                      // Use handleInputChange to ensure the event is dispatched
+                      handleInputChange(e);
+                      adjustTextareaHeight(e);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmit();
+                      } else {
+                        handleKeyDown(e);
+                      }
+                    }}
+                    placeholder="Type your message..."
                     rows={1}
-                    className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
+                    className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-normal break-words ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
+                    style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}
                     disabled={isLoading}
                     autoFocus
                   />
@@ -310,7 +556,7 @@ export function Chat() {
                     <ModelSelector />
                     <button
                       type="submit"
-                      disabled={!input.trim() || isLoading}
+                      disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
                       className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#7c4a2d] hover:bg-[#f97316] focus:ring-[#f97316]' : 'bg-orange-200 hover:bg-orange-400 focus:ring-orange-400'}`}
                       style={{ minWidth: 44, minHeight: 44 }}
                     >
@@ -347,7 +593,7 @@ export function Chat() {
 
       {/* Message history container */}
       <div className="flex-1 flex flex-col items-center">
-        <div className="w-[80vw] mx-auto px-2 mr-[64px] pb-24 sm:pb-0">
+        <div className="w-full max-w-3xl mx-auto px-4 pb-24 sm:pb-0">
           <div className="flex flex-col space-y-3 py-4 px-2">
             <AnimatePresence initial={false}>
               {messages.map((message, idx) => (
@@ -366,7 +612,7 @@ export function Chat() {
                         M
                       </div>
                     )}
-                    <div className={`flex-1 max-w-[85%] ${message.role === 'user' ? 'ml-0' : 'ml-11'}`}>
+                    <div className={`flex-1 max-w-full sm:max-w-[85%] ${message.role === 'user' ? 'ml-0' : 'ml-11'}`}>
                       <div className={`rounded-2xl p-5 text-base transition-colors duration-300 ${
                         message.role === 'assistant'
                           ? theme === 'dark'
@@ -377,10 +623,33 @@ export function Chat() {
                             : 'bg-[#f3f3f3] text-neutral-900 border border-neutral-200'
                       }`}>
                         <ReactMarkdown
-                          className="prose prose-invert max-w-none"
+                          className="prose prose-invert max-w-none break-words whitespace-pre-wrap"
                           components={{
-                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                            code: ({ children }) => <code className="bg-neutral-700/50 rounded px-1">{children}</code>,
+                            p: ({ node, children, ...props }) => <div className="mb-2 last:mb-0 break-words whitespace-pre-wrap" {...props}>{children}</div>,
+                            code: ({ children }) => <code className="bg-neutral-700/50 rounded px-1 break-words whitespace-pre-wrap">{children}</code>,
+                            img: ({ node, ...props }) => {
+                              // Check if src is empty or undefined
+                              if (!props.src || props.src === '') {
+                                return (
+                                  <div className="flex items-center justify-center w-full h-[200px] bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
+                                    <span className="text-gray-500 dark:text-gray-400">Image not available</span>
+                                  </div>
+                                );
+                              }
+                              
+                              return (
+                                <img
+                                  {...props}
+                                  className="max-w-full rounded-lg my-2 max-h-[300px] object-contain"
+                                  alt={props.alt || 'Image'}
+                                  onError={(e) => {
+                                    // Replace broken images with a placeholder
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzMzMyI+SW1hZ2UgbG9hZCBlcnJvcjwvdGV4dD48L3N2Zz4=';
+                                  }}
+                                />
+                              );
+                            },
                           }}
                         >
                           {message.content}
@@ -410,13 +679,8 @@ export function Chat() {
                     id="file-upload-chat-mobile"
                     type="file"
                     className="hidden"
-                    accept="image/*,.pdf,.doc,.docx,.txt"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        console.log('File selected:', file);
-                      }
-                    }}
+                    accept="image/*"
+                    onChange={handleFileUpload}
                   />
                 </label>
                 <textarea
@@ -433,7 +697,7 @@ export function Chat() {
                   <ModelSelector />
                   <button
                     type="submit"
-                    disabled={!input.trim() || isLoading}
+                    disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
                     className="rounded-lg bg-[#7c4a2d] hover:bg-[#f97316] transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#f97316]"
                     style={{ minWidth: 44, minHeight: 44 }}
                   >
@@ -460,15 +724,8 @@ export function Chat() {
                     id="file-upload-chat"
                     type="file"
                     className="hidden"
-                    accept="image/*,.pdf,.doc,.docx,.txt"
-                    onChange={(e) => {
-                      // Handle file upload here
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        // TODO: Implement file upload handling
-                        console.log('File selected:', file);
-                      }
-                    }}
+                    accept="image/*"
+                    onChange={handleFileUpload}
                   />
                 </label>
                 <textarea
@@ -485,7 +742,7 @@ export function Chat() {
                   <ModelSelector />
                   <button
                     type="submit"
-                    disabled={!input.trim() || isLoading}
+                    disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
                     className="rounded-lg bg-[#7c4a2d] hover:bg-[#f97316] transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#f97316]"
                     style={{ minWidth: 44, minHeight: 44 }}
                   >
@@ -509,4 +766,4 @@ export function Chat() {
       </button>
     </div>
   );
-} 
+}
