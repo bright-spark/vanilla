@@ -2,6 +2,7 @@
  * Configuration for different environments
  * This file reads environment variables from .env.local in Next.js
  * or from the environment when running the standalone server
+ * @typedef {import('./types').AppConfig} AppConfig
  */
 
 // Get API key directly from environment variables
@@ -14,13 +15,13 @@ function getApiKey() {
 const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
 
 // If we're on Vercel, use the special Vercel configuration
+let configToExport;
 if (isVercel) {
   try {
-    const vercelConfig = require('./vercel-config');
-    module.exports = vercelConfig;
-    return; // Exit early
+    configToExport = require('./vercel-config');
   } catch (e) {
     console.warn('Failed to load Vercel config, falling back to default:', e);
+    // Will continue to use the default config below
   }
 }
 
@@ -43,5 +44,10 @@ const config = {
 // Default to development environment
 const env = process.env.NODE_ENV || 'development';
 
-// Export the configuration for the current environment
-module.exports = config[env];
+// If we already have a Vercel config, use that, otherwise use the environment-specific config
+if (configToExport) {
+  module.exports = configToExport;
+} else {
+  // Export the configuration for the current environment
+  module.exports = config[env];
+}
