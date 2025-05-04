@@ -1,5 +1,6 @@
 import { OpenAIStream, StreamingTextResponse } from 'ai';
 import { NextRequest } from 'next/server';
+import config from '@/config';
 
 export const runtime = 'edge';
 
@@ -51,12 +52,12 @@ export async function POST(req: NextRequest) {
     let multimodelResponse: Response;
     
     try {
-      // Forward the request to our local multimodel API
-      multimodelResponse = await fetch('http://localhost:8787/v1/chat/completions', {
+      // Forward the request to the appropriate API based on environment
+      multimodelResponse = await fetch(`${config.apiBaseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify({
           model,

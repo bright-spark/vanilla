@@ -1,0 +1,10 @@
+{
+  "env": {
+    "OPENAI_API_KEY": "@openai-api-key"
+  },
+  "build": {
+    "env": {
+      "OPENAI_API_KEY": "@openai-api-key"
+    }
+  }
+}

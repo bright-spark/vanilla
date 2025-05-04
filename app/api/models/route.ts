@@ -1,4 +1,5 @@
 export const runtime = 'edge';
+import config from '@/config';
 
 // Helper function to categorize models by type
 function categorizeModel(modelId: string): 'text-to-text' | 'text-to-image' | 'inpainting' | 'image-to-image' | 'other' {
@@ -56,8 +57,8 @@ const bestModels = {
 
 export async function GET() {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      // Return mock data for development
+    if (config.useMockData) {
+      // Return mock data when configured to do so
       return Response.json({
         object: "list",
         data: [
@@ -101,9 +102,9 @@ export async function GET() {
       });
     }
 
-    const response = await fetch('https://api.redbuilder.io/v1/models', {
+    const response = await fetch(`${config.apiBaseUrl}/v1/models`, {
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${config.apiKey}`,
       }
     });
     

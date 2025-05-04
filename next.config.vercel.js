@@ -12,19 +12,21 @@ const nextConfig = {
       enabled: true
     }
   },
+  
   // Vercel-specific: ensure trailingSlash is false for SSR
   trailingSlash: false,
-  
-  // Fix for static assets in standalone mode
-  assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
-  
-  // Ensure proper static file serving
-  distDir: '.next',
   
   // Configure static file serving
   images: {
     unoptimized: true
+  },
+  
+  // Vercel-specific environment variables
+  env: {
+    API_BASE_URL: 'https://api.redbuilder.io',
+    USE_MOCK_DATA: 'false',
+    IS_VERCEL: 'true'
   }
 };
 
-module.exports = nextConfig; 
+module.exports = nextConfig;

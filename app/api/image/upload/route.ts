@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
+import appConfig from '@/config';
 
+// API configuration for Next.js
 export const config = {
   api: {
     bodyParser: false,

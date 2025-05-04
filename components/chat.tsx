@@ -222,15 +222,23 @@ export function Chat() {
     if (e) e.preventDefault();
     if (isLoading || (!input.trim() && !selectedImage)) return;
 
-    // Force close any open side menu
-    const sideMenu = document.querySelector('.side-menu');
-    const sideMenuOverlay = document.querySelector('.side-menu-overlay');
-    
-    if (sideMenu && sideMenu.classList.contains('open')) {
-      sideMenu.classList.remove('open');
+    // Force close any open side menu - more robust implementation
+    try {
+      const sideMenu = document.querySelector('.side-menu');
+      const sideMenuOverlay = document.querySelector('.side-menu-overlay');
+      
+      if (sideMenu) {
+        sideMenu.classList.remove('open');
+      }
+      
       if (sideMenuOverlay) {
         sideMenuOverlay.classList.remove('visible');
       }
+      
+      // Also try to dispatch a custom event to ensure sidebar closes
+      window.dispatchEvent(new CustomEvent('closeSidebar'));
+    } catch (e) {
+      console.error('Error closing sidebar:', e);
     }
 
     setIsLoading(true);
@@ -547,15 +555,16 @@ export function Chat() {
                     }}
                     placeholder="Type your message..."
                     rows={1}
-                    className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-normal break-words ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
-                    style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}
+                    className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
+                    style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
                     disabled={isLoading}
                     autoFocus
                   />
                   <div className="flex items-center gap-2">
                     <ModelSelector />
                     <button
-                      type="submit"
+                      type="button"
+                      onClick={handleSubmit}
                       disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
                       className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#7c4a2d] hover:bg-[#f97316] focus:ring-[#f97316]' : 'bg-orange-200 hover:bg-orange-400 focus:ring-orange-400'}`}
                       style={{ minWidth: 44, minHeight: 44 }}

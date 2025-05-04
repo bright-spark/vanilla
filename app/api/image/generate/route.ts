@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import config from '@/config';
 
 /**
  * Generates a fallback image data URL with the prompt text
@@ -48,12 +49,12 @@ export async function POST(req: NextRequest) {
 
     console.log('Image generation request:', { prompt });
     
-    // Forward the prompt to the multimodel API
-    const response = await fetch('http://localhost:8787/v1/images/generations', {
+    // Forward the prompt to the appropriate API based on environment
+    const response = await fetch(`${config.apiBaseUrl}/v1/images/generations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
         prompt,

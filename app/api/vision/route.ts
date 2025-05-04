@@ -1,10 +1,12 @@
 export const runtime = 'edge';
+import config from '@/config';
 
 export async function POST(req: Request) {
   try {
     const { messages, model = '@cf/meta/llama-4-scout-17b-16e-instruct' } = await req.json();
 
-    if (!process.env.OPENAI_API_KEY) {
+    // Only check for API key if we're not using mock data
+    if (!config.useMockData && !config.apiKey) {
       return new Response(
         JSON.stringify({
           error: {
@@ -16,11 +18,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await fetch('https://api.redbuilder.io/v1/chat/completions/vision', {
+    const response = await fetch(`${config.apiBaseUrl}/v1/chat/completions/vision`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
         model,
