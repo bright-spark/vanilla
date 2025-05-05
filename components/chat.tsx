@@ -569,25 +569,23 @@ export default function Chat() {
         <StatusLED status={statusLED} theme={theme} />
       </div>
       
-      {/* Message history container */}
-      <div className="flex-1 flex flex-col items-center" style={{ width: 'calc(100vw - 60px)', marginLeft: '60px', zIndex: 0 }}>
-        <div className="w-full max-w-[800px] mx-auto px-4 pb-32 md:pb-24">
-          <div className="flex flex-col space-y-3 py-4 px-2" id="message-container">
-            <AnimatePresence initial={false}>
-              {messages.map((message) => (
-                message.role !== 'system' && (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    theme={theme}
-                    copiedMessageId={copiedMessageId}
-                    setCopiedMessageId={setCopiedMessageId}
-                  />
-                )
-              ))}
-            </AnimatePresence>
-            <div ref={messagesEndRef} />
-          </div>
+      {/* Main chat layout */}
+      <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 sm:pb-32 mb-16 sm:mb-0">
+        <div className="flex flex-col space-y-3 py-4 px-2" id="message-container">
+          <AnimatePresence initial={false}>
+            {messages.map((message) => (
+              message.role !== 'system' && (
+                <MessageItem
+                  key={message.id}
+                  message={message}
+                  theme={theme}
+                  copiedMessageId={copiedMessageId}
+                  setCopiedMessageId={setCopiedMessageId}
+                />
+              )
+            ))}
+          </AnimatePresence>
+          <div ref={messagesEndRef} />
         </div>
       </div>
       
@@ -621,15 +619,17 @@ export default function Chat() {
         textareaRef={textareaRef}
       />
       
-      {/* Mobile new chat button in top left */}
-      <button
-        className="block sm:hidden fixed top-4 left-4 z-50 bg-transparent p-1 rounded-full focus:outline-none"
-        aria-label="New chat"
-        onClick={() => window.dispatchEvent(new Event('newChat'))}
-        type="button"
-      >
-        <Plus className="w-6 h-6 text-[#f97316]" />
-      </button>
+      {/* Mobile floating action button island in bottom right */}
+      <div className="block sm:hidden fixed bottom-20 right-4 z-50 rounded-full shadow-lg overflow-hidden">
+        <button
+          className={`p-4 flex items-center justify-center ${theme === 'dark' ? 'bg-[#1c1c1c]' : 'bg-white'}`}
+          aria-label="New chat"
+          onClick={() => window.dispatchEvent(new Event('newChat'))}
+          type="button"
+        >
+          <Plus className="w-8 h-8 text-[#f97316]" />
+        </button>
+      </div>
     </div>
   );
 }
