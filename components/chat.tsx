@@ -312,14 +312,30 @@ export function Chat() {
           imageUrl = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHJlY3Qgd2lkdGg9IjkwJSIgaGVpZ2h0PSI5MCUiIHg9IjUlIiB5PSI1JSIgZmlsbD0iI2UwZTBlMCIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiLz48dGV4dCB4PSI1MCUiIHk9IjMwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjI0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMzMzIj5JbWFnZSBHZW5lcmF0aW9uPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNDAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM1NTUiPkZhbGxiYWNrIHBsYWNlaG9sZGVyPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM3NzciPiR7cHJvbXB0LnN1YnN0cmluZygwLCAzMCl9JHtwcm9tcHQubGVuZ3RoID4gMzAgPyAnLi4uJyA6ICcnfTwvdGV4dD48dGV4dCB4PSI1MCUiIHk9IjcwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5EZXZlbG9wbWVudCBtb2RlPC90ZXh0Pjwvc3ZnPg==`;
         }
         
-        // Check if it's an R2 storage URL
-        if (imageUrl.includes('/images/') && !imageUrl.startsWith('data:')) {
-          console.log('Detected R2 storage URL');
-          // Make sure the URL is properly formatted for our environment
-          if (!imageUrl.startsWith('http')) {
-            // If it's a relative path, convert to absolute
-            imageUrl = `http://localhost:8787${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+        // Fix URL format for R2 storage
+        if (imageUrl && !imageUrl.startsWith('data:')) {
+          console.log('Checking image URL format:', imageUrl.substring(0, 50) + '...');
+          
+          // Extract the filename from the URL
+          const urlParts = imageUrl.split('/');
+          const filename = urlParts[urlParts.length - 1];
+          
+          // Check for various URL patterns and fix them
+          if (imageUrl.includes('api.redbuilder.io/images/generations/')) {
+            // Convert to the working R2 bucket URL format
+            console.log('Converting API URL to R2 bucket URL');
+            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
+          } else if (imageUrl.includes('multimodel-images.redbuilder.io/generations/')) {
+            // Fix the old R2 bucket domain
+            console.log('Fixing old R2 bucket domain');
+            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
+          } else if (imageUrl.includes('/images/generations/') && !imageUrl.includes('multi.redbuilder.io')) {
+            // Generic fix for other domain patterns
+            console.log('Applying generic URL fix');
+            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
           }
+          
+          console.log('Final image URL:', imageUrl.substring(0, 50) + '...');
         }
         
         // Add the generated image as an assistant message

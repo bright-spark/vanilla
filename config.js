@@ -8,7 +8,8 @@
 // Get API key directly from environment variables
 // This will be populated by load-env.js when running the standalone server
 function getApiKey() {
-  return process.env.OPENAI_API_KEY || '';
+  // Try to use RedBuilder API key first, then fall back to OpenAI API key
+  return process.env.REDBUILDER_API_KEY || process.env.OPENAI_API_KEY || '';
 }
 
 // Detect if we're running on Vercel
@@ -25,10 +26,13 @@ if (isVercel) {
   }
 }
 
+/**
+ * @type {{ development: import('./types').AppConfig, production: import('./types').AppConfig }}
+ */
 const config = {
   development: {
-    // Always use the live API URL on Vercel, even in development mode
-    apiBaseUrl: isVercel ? 'https://api.redbuilder.io' : 'http://localhost:8787',
+    // Always use the live API URL
+    apiBaseUrl: 'https://api.redbuilder.io',
     // For development, we'll use mock data when API key is not available
     get useMockData() { return !isVercel && !getApiKey(); },
     get apiKey() { return getApiKey(); },
@@ -44,10 +48,10 @@ const config = {
 // Default to development environment
 const env = process.env.NODE_ENV || 'development';
 
+/**
+ * @type {import('./types').AppConfig}
+ */
+const exportedConfig = configToExport || config[env];
+
 // If we already have a Vercel config, use that, otherwise use the environment-specific config
-if (configToExport) {
-  module.exports = configToExport;
-} else {
-  // Export the configuration for the current environment
-  module.exports = config[env];
-}
+module.exports = exportedConfig;

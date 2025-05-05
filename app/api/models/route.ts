@@ -1,5 +1,9 @@
 export const runtime = 'edge';
-import config from '@/config';
+import configImport from '@/config';
+import { AppConfig } from '@/types';
+
+// Type assertion for config
+const config = configImport as AppConfig;
 
 // Helper function to categorize models by type
 function categorizeModel(modelId: string): 'text-to-text' | 'text-to-image' | 'inpainting' | 'image-to-image' | 'other' {

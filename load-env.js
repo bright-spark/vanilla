@@ -27,12 +27,18 @@ function loadEnvFile(filePath) {
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const envFile = path.resolve(process.cwd(), `.env.${NODE_ENV}`);
 const localEnvFile = path.resolve(process.cwd(), '.env.local');
+const redbuilderEnvFile = path.resolve(process.cwd(), '.env.redbuilder');
 
-// First try NODE_ENV specific file, then .env.local, then .env
+// First try NODE_ENV specific file, then .env.local, then .env.redbuilder, then .env
 let loaded = loadEnvFile(envFile);
 if (!loaded) {
   loaded = loadEnvFile(localEnvFile);
 }
+
+// Always try to load RedBuilder specific env file regardless of whether other files loaded
+// This allows RedBuilder API key to override any existing API keys
+loadEnvFile(redbuilderEnvFile);
+
 if (!loaded) {
   loadEnvFile(path.resolve(process.cwd(), '.env'));
 }
