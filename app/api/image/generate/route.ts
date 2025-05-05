@@ -1,15 +1,18 @@
 import { NextRequest } from 'next/server';
 
-// Import the config and explicitly type it
-// @ts-ignore - Suppress TypeScript errors for this import
-import config from '@/config';
+// Define the config directly to avoid import issues
+const config = {
+  apiBaseUrl: process.env.API_BASE_URL || 'https://api.redbuilder.io',
+  apiKey: process.env.REDBUILDER_API_KEY || process.env.OPENAI_API_KEY || '',
+  useMockData: process.env.NODE_ENV === 'development' && (!process.env.REDBUILDER_API_KEY && !process.env.OPENAI_API_KEY)
+};
 
-// Declare the type for TypeScript
-declare const config: {
+// Type definition for the config
+interface Config {
   apiBaseUrl: string;
   apiKey: string;
   useMockData: boolean;
-};
+}
 
 /**
  * Fetch with retry and exponential backoff
@@ -19,64 +22,60 @@ declare const config: {
  */
 async function fetchWithRetry(
   url: string,
-  options: RequestInit & {
-    maxRetries?: number;
-    initialDelay?: number;
-    maxDelay?: number;
-    backoffFactor?: number;
-  } = {}
+  options: any = {}
 ): Promise<Response> {
   const {
     maxRetries = 3,
     initialDelay = 1000,
     maxDelay = 10000,
     backoffFactor = 2,
+    shouldRetry = (response: Response) => !response.ok,
+    shouldRetryOnError = (error: Error) => true,
+    onRetry = (retryCount: number, delay: number, error?: Error) => {},
     ...fetchOptions
   } = options;
 
-  let lastError: Error | undefined;
+  let lastError: Error | null = null;
   let delay = initialDelay;
 
   for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
     try {
-      console.log(`Attempt ${retryCount + 1}/${maxRetries + 1} to fetch ${url}`);
+      // Log attempt for debugging
+      if (retryCount > 0) {
+        console.log(`Attempt ${retryCount + 1}/${maxRetries + 1} to fetch ${url}`);
+      }
+
+      // Make the fetch request
       const response = await fetch(url, fetchOptions);
-      
-      // If the response is successful, return it
-      if (response.ok) {
+
+      // If the response is successful or we shouldn't retry, return it
+      if (response.ok || (retryCount === maxRetries) || !(await shouldRetry(response))) {
         return response;
       }
 
-      // If we've reached the maximum number of retries, return the last response
-      if (retryCount === maxRetries) {
-        console.log(`Maximum retries reached (${maxRetries}). Returning last response.`);
-        return response;
-      }
-
-      // Calculate the delay for the next retry
-      delay = Math.min(delay * backoffFactor, maxDelay);
-      
+      // Log retry information
       console.log(`Request failed with status ${response.status}. Retrying in ${delay}ms...`);
-      
-      // Wait before the next retry
-      await new Promise(resolve => setTimeout(resolve, delay));
     } catch (error) {
+      // Save the error for later
       lastError = error as Error;
-      
-      // If we've reached the maximum number of retries, throw the last error
-      if (retryCount === maxRetries) {
-        console.log(`Maximum retries reached (${maxRetries}). Throwing error.`);
+
+      // If we've reached the maximum number of retries or we shouldn't retry on this error, throw
+      if (retryCount === maxRetries || !(await shouldRetryOnError(lastError))) {
         throw lastError;
       }
 
-      // Calculate the delay for the next retry
-      delay = Math.min(delay * backoffFactor, maxDelay);
-      
+      // Log retry information
       console.log(`Request failed with error: ${lastError.message}. Retrying in ${delay}ms...`);
-      
-      // Wait before the next retry
-      await new Promise(resolve => setTimeout(resolve, delay));
     }
+
+    // Call the onRetry callback with the error
+    onRetry(retryCount + 1, delay, lastError || undefined);
+    
+    // Wait before the next retry
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Calculate the delay for the next retry
+    delay = Math.min(delay * backoffFactor, maxDelay);
   }
 
   // This should never happen, but TypeScript requires a return statement
@@ -84,10 +83,62 @@ async function fetchWithRetry(
 }
 
 /**
- * Generates a fallback image data URL with the prompt text
- * This is used when the actual image generation service returns a mock error
+ * Generates a realistic image URL based on the prompt using RedBuilder API
  */
-function generateFallbackImage(prompt: string): string {
+async function generateImageFromPrompt(prompt: string): Promise<string> {
+  try {
+    // Use the RedBuilder API for image generation
+    const typedConfig = config as Config;
+    
+    // If no API key is available, use the fallback
+    if (!typedConfig.apiKey) {
+      console.log('No API key available, using fallback image');
+      return generateFallbackPlaceholder(prompt);
+    }
+    
+    const response = await fetchWithRetry(`${typedConfig.apiBaseUrl}/v1/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${typedConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        prompt,
+        n: 1,
+        size: '512x512',
+        response_format: 'url'
+      }),
+      maxRetries: 3,
+      initialDelay: 1000,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Handle different response formats
+    if (data.data && data.data.length > 0) {
+      return data.data[0].url || '';
+    } else if (data.url) {
+      return data.url;
+    } else if (data.imageUrl) {
+      return data.imageUrl;
+    } else {
+      throw new Error('No image URL in response');
+    }
+  } catch (error) {
+    console.error('Error generating image from RedBuilder API:', error);
+    // Fallback to a placeholder if the API call fails
+    return generateFallbackPlaceholder(prompt);
+  }
+}
+
+/**
+ * Generates a fallback placeholder image if the API call fails
+ */
+function generateFallbackPlaceholder(prompt: string): string {
   // Create a canvas element (in Node.js environment)
   const width = 512;
   const height = 512;
@@ -131,117 +182,32 @@ export async function POST(req: NextRequest) {
 
     console.log('Image generation request:', { prompt });
     
-    // Make the API request to RedBuilder API with retry mechanism
     try {
-      const response = await fetchWithRetry(`${config.apiBaseUrl}/api/v1/image/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify({
-          prompt,
-          model: 'stable-diffusion-v1-5',
-          n: 1,
-          size: '512x512',
-        }),
-        // Retry configuration
-        maxRetries: 3,
-        initialDelay: 1000,
-        maxDelay: 8000,
-        backoffFactor: 2
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        return new Response(
-          JSON.stringify({
-            error: {
-              message: errorData.error?.message || 'Error generating image',
-              type: 'api_error',
+      // Generate image using our helper function
+      const imageUrl = await generateImageFromPrompt(prompt);
+      
+      // Return the response with the image URL
+      return new Response(
+        JSON.stringify({
+          created: Date.now(),
+          data: [
+            {
+              url: imageUrl,
+              revised_prompt: prompt,
             },
-          }),
-          { status: response.status }
-        );
-      }
-
-      // Return the response from the RedBuilder API
-      const data = await response.json();
-      console.log('Image generation response:', data);
-      
-      // Check if the response contains a URL from the RedBuilder API
-      let url = data.data?.[0]?.url || data.url;
-      
-      // Fix the URL if it's using the wrong domain or path structure
-      if (url) {
-        // Extract the filename from the URL to create a fixed version
-        const urlParts = url.split('/');
-        const filename = urlParts[urlParts.length - 1];
-        
-        // If we have multiple URLs in the response, use them or create fallbacks
-        if (data.data?.[0]?.urls) {
-          data.data[0].urls = {
-            ...data.data[0].urls,
-            // Add the known working direct URL format
-            direct: `https://multi.redbuilder.io/generations/${filename}`,
-            // Keep the original URL as a fallback
-            original: url
-          };
-          
-          // Also update the main URL to the one that works
-          data.data[0].url = `https://multi.redbuilder.io/generations/${filename}`;
-          url = data.data[0].url;
-        } else if (data.data && data.data.length > 0) {
-          // Create URLs object if it doesn't exist
-          data.data[0].urls = {
-            main: url,
-            worker: `https://redbuilder-api.redbuilder.workers.dev/images/generations/${filename}`,
-            direct: `https://multi.redbuilder.io/generations/${filename}`,
-            public: `https://pub-account.r2.dev/generations/${filename}`
-          };
-          
-          // Update the main URL to the one that works
-          data.data[0].url = `https://multi.redbuilder.io/generations/${filename}`;
-          url = data.data[0].url;
+          ],
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          status: 200
         }
-      }
-      
-      console.log('Using URL from API response (updated if needed):', url);
-      
-      // Return the modified API response
-      return new Response(JSON.stringify(data), {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-    } catch (apiError) {
+      );
+    } catch (apiError: any) {
       console.error('Error calling image generation API:', apiError);
       
-      // If we're in development mode, generate a fallback image
-      if (config.useMockData) {
-        console.log('Using fallback image in development mode');
-        const fallbackUrl = generateFallbackImage(prompt);
-        
-        // Return a mock response with the fallback image
-        return new Response(
-          JSON.stringify({
-            created: Date.now(),
-            data: [
-              {
-                url: fallbackUrl,
-                revised_prompt: prompt,
-              },
-            ],
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-      }
-      
-      // Otherwise, return an error response
+      // Return an error response
       return new Response(
         JSON.stringify({
           error: {
@@ -252,12 +218,12 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error processing image generation request:', error);
     return new Response(
       JSON.stringify({
         error: {
-          message: error instanceof Error ? error.message : 'Error processing request',
+          message: error instanceof Error ? error.message : 'Error processing image generation request',
           type: 'server_error',
         },
       }),

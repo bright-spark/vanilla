@@ -9,7 +9,7 @@ interface EmptyChatProps {
   handleSubmit: (e?: React.FormEvent) => void;
   input: string;
   handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  handleKeyDown: (e: React.KeyboardEvent) => void;
+  handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   isLoading: boolean;
   isGeneratingImage: boolean;
   selectedImage: string | null;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Plus } from 'lucide-react';
+import { Plus, Sun, Moon } from 'lucide-react';
 import { fetchWithRetry, fetchJsonWithRetry } from '../lib/api';
 
 // Import refactored components
@@ -250,7 +250,7 @@ export default function Chat() {
             });
           },
           maxRetries: 3,
-          retryDelay: 1000,
+          initialDelay: 1000,
         });
         
         // Check for errors
@@ -387,7 +387,7 @@ export default function Chat() {
             console.log(`Retrying chat request (${retryCount})...`);
           },
           maxRetries: 3,
-          retryDelay: 1000,
+          initialDelay: 1000,
         });
         
         // Check for errors
@@ -448,7 +448,7 @@ export default function Chat() {
             console.log(`Retrying chat request (${retryCount})...`);
           },
           maxRetries: 3,
-          retryDelay: 1000,
+          initialDelay: 1000,
         });
         
         // Check for errors
@@ -546,9 +546,9 @@ export default function Chat() {
           style={{ boxShadow: 'none', border: 'none' }}
         >
           {theme === 'dark' ? (
-            <span className="w-6 h-6" style={{ color: '#fff' }}>☀️</span>
+            <Sun className="w-6 h-6" style={{ color: '#fff' }} />
           ) : (
-            <span className="w-6 h-6" style={{ color: '#6b7280' }}>🌙</span>
+            <Moon className="w-6 h-6" style={{ color: '#6b7280' }} />
           )}
         </button>
         <StatusLED status={statusLED} theme={theme} />

@@ -13,6 +13,7 @@ interface ChatInputProps {
   handleSubmit: (e?: React.FormEvent) => void;
   adjustTextareaHeight: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onModelChange: (model: string) => void;
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -25,14 +26,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
   handleInputChange,
   handleSubmit,
   adjustTextareaHeight,
-  onModelChange
+  onModelChange,
+  textareaRef
 }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Use the provided ref or create a local one if not provided
+  const localTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = textareaRef || localTextareaRef;
 
   // Auto-focus the textarea when the component mounts
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.focus();
+    if (inputRef.current) {
+      inputRef.current.focus();
     }
   }, []);
 
@@ -94,7 +98,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               mobileInputArea.classList.remove('hidden');
               mobileInputArea.classList.add('flex');
               setTimeout(() => {
-                textareaRef.current?.focus();
+                inputRef.current?.focus();
               }, 100);
             }
           }}
