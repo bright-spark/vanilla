@@ -29,17 +29,16 @@ const MobileInput: React.FC<MobileInputProps> = ({
   onModelChange,
   textareaRef
 }) => {
-  const closeModal = () => {
-    const mobileInputArea = document.getElementById('mobile-input-area');
-    if (mobileInputArea) {
-      mobileInputArea.classList.add('hidden');
-      mobileInputArea.classList.remove('flex');
-    }
-  };
-
+  // Always keep the input area visible, no need to close it
   const handleMobileSubmit = (e?: React.FormEvent) => {
     handleSubmit(e);
-    closeModal();
+    
+    // Re-focus the textarea after submission
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 100);
   };
 
   return (

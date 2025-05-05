@@ -76,18 +76,62 @@ export default function Chat() {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
-  // Scroll to bottom of messages
+  // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
+      // Scroll to bottom with smooth behavior
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      
+      // On mobile, also scroll the top of the message into view
+      if (window.innerWidth < 640 && messages.length > 1) {
+        const messageContainer = document.getElementById('message-container');
+        if (messageContainer && messageContainer.firstElementChild) {
+          // Scroll to the top of the message container with a slight offset
+          window.scrollTo({
+            top: messageContainer.offsetTop - 20,
+            behavior: 'smooth'
+          });
+        }
+      }
+    }
+    
+    // Always focus the textarea after messages change
+    if (textareaRef.current) {
+      textareaRef.current.focus();
     }
   }, [messages]);
   
-  // Auto-focus the textarea when the component mounts
+  // Auto-focus the textarea when the component mounts and on various events
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
+    
+    // Set up event listeners to ensure focus is maintained
+    const focusTextarea = () => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    };
+    
+    // Focus on touch events (for mobile)
+    window.addEventListener('touchend', focusTextarea);
+    // Focus when window gets focus
+    window.addEventListener('focus', focusTextarea);
+    // Focus after scrolling stops
+    let scrollTimeout: NodeJS.Timeout;
+    const handleScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(focusTextarea, 100);
+    };
+    window.addEventListener('scroll', handleScroll);
+    
+    return () => {
+      window.removeEventListener('touchend', focusTextarea);
+      window.removeEventListener('focus', focusTextarea);
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
   }, []);
   
   // Set theme based on user preference

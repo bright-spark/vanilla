@@ -33,12 +33,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const localTextareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = textareaRef || localTextareaRef;
 
-  // Auto-focus the textarea when the component mounts
+  // Auto-focus the textarea when the component mounts and after any state changes
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
   }, []);
+  
+  // Keep focus on the textarea after any input changes
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [input]);
 
   return (
     <>
