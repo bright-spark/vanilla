@@ -3,12 +3,26 @@ import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
+import Script from 'next/script';
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Kiki",
-  description: "A clever girl that wants to learn.",
+  title: "It's me, Kiki.",
+  description: "A helpful AI assistant chat application",
+  manifest: "/manifest.json",
+  themeColor: "#f97316",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Kiki"
+  },
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false
+  }
 };
 
 export default function RootLayout({
@@ -20,6 +34,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+        <link rel="apple-touch-icon" href="/icons/kiki-192.png" />
       </head>
       <body className={inter.className}>
         <ThemeProvider
@@ -31,6 +46,24 @@ export default function RootLayout({
           {children}
           <Toaster />
         </ThemeProvider>
+        
+        {/* PWA Service Worker Registration */}
+        <Script id="register-service-worker" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(
+                  function(registration) {
+                    console.log('Service Worker registration successful with scope: ', registration.scope);
+                  },
+                  function(error) {
+                    console.log('Service Worker registration failed: ', error);
+                  }
+                );
+              });
+            }
+          `}
+        </Script>
       </body>
     </html>
   );
