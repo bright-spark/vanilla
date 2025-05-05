@@ -6,6 +6,14 @@ import { Plus, Send, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ModelSelector } from './model-selector';
 
+// Define the message interface
+interface ChatMessage {
+  id: string;
+  role: string; // Allow any string role
+  content: string;
+  isGenerating?: boolean;
+}
+
 // Status LED component
 function StatusLED({ status, theme }: { status: 'idle' | 'waiting' | 'error' | 'new-message' | 'recovered', theme: 'light' | 'dark' }) {
   let baseColor, glowColor, gradientStyle;
@@ -82,7 +90,7 @@ function StatusLED({ status, theme }: { status: 'idle' | 'waiting' | 'error' | '
 
 export function Chat() {
   const [selectedModel, setSelectedModel] = useState('@cf/meta/llama-4-scout-17b-16e-instruct');
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'system-0',
       role: 'system',
@@ -255,11 +263,12 @@ export function Chat() {
         return;
       }
       
-      // Create a message showing the image generation request
+      // Create a message showing the image generation request with a loading placeholder
       const userMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: `Generating image from prompt: "${prompt}"`,
+        isGenerating: true // Flag to indicate this message is in generating state
       };
       
       // Add the message to the chat
@@ -338,7 +347,12 @@ export function Chat() {
           console.log('Final image URL:', imageUrl.substring(0, 50) + '...');
         }
         
-        // Add the generated image as an assistant message
+        // First, remove the isGenerating flag from the user message
+        setMessages(msgs => msgs.map(msg => 
+          msg.isGenerating ? { ...msg, isGenerating: false } : msg
+        ));
+        
+        // Then add the generated image as an assistant message
         setMessages(msgs => [
           ...msgs,
           {
@@ -349,6 +363,13 @@ export function Chat() {
         ]);
       } catch (error: any) {
         console.error('Image generation error:', error);
+        
+        // First, remove the isGenerating flag from the user message
+        setMessages(msgs => msgs.map(msg => 
+          msg.isGenerating ? { ...msg, isGenerating: false } : msg
+        ));
+        
+        // Then add the error message
         setMessages(msgs => [
           ...msgs,
           {
@@ -647,38 +668,50 @@ export function Chat() {
                             ? 'bg-[#232323] text-white'
                             : 'bg-[#f3f3f3] text-neutral-900 border border-neutral-200'
                       }`}>
-                        <ReactMarkdown
-                          className="prose prose-invert max-w-none break-words whitespace-pre-wrap"
-                          components={{
-                            p: ({ node, children, ...props }) => <div className="mb-2 last:mb-0 break-words whitespace-pre-wrap" {...props}>{children}</div>,
-                            code: ({ children }) => <code className="bg-neutral-700/50 rounded px-1 break-words whitespace-pre-wrap">{children}</code>,
-                            img: ({ node, ...props }) => {
-                              // Check if src is empty or undefined
-                              if (!props.src || props.src === '') {
+                        {message.isGenerating ? (
+                          <div className="flex flex-col items-center justify-center p-4">
+                            <div className="relative w-16 h-16 mb-4">
+                              <div className="absolute inset-0 border-4 border-t-[#f97316] border-r-[#f97316] border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-lg font-medium">Generating...</p>
+                              <p className="text-sm opacity-70 mt-1">Creating your image, please wait</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <ReactMarkdown
+                            className="prose prose-invert max-w-none break-words whitespace-pre-wrap"
+                            components={{
+                              p: ({ node, children, ...props }) => <div className="mb-2 last:mb-0 break-words whitespace-pre-wrap" {...props}>{children}</div>,
+                              code: ({ children }) => <code className="bg-neutral-700/50 rounded px-1 break-words whitespace-pre-wrap">{children}</code>,
+                              img: ({ node, ...props }) => {
+                                // Check if src is empty or undefined
+                                if (!props.src || props.src === '') {
+                                  return (
+                                    <div className="flex items-center justify-center w-full h-[200px] bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
+                                      <span className="text-gray-500 dark:text-gray-400">Image not available</span>
+                                    </div>
+                                  );
+                                }
+                                
                                 return (
-                                  <div className="flex items-center justify-center w-full h-[200px] bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-                                    <span className="text-gray-500 dark:text-gray-400">Image not available</span>
-                                  </div>
+                                  <img
+                                    {...props}
+                                    className="max-w-full rounded-lg my-2 max-h-[300px] object-contain"
+                                    alt={props.alt || 'Image'}
+                                    onError={(e) => {
+                                      // Replace broken images with a placeholder
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzMzMyI+SW1hZ2UgbG9hZCBlcnJvcjwvdGV4dD48L3N2Zz4=';
+                                    }}
+                                  />
                                 );
-                              }
-                              
-                              return (
-                                <img
-                                  {...props}
-                                  className="max-w-full rounded-lg my-2 max-h-[300px] object-contain"
-                                  alt={props.alt || 'Image'}
-                                  onError={(e) => {
-                                    // Replace broken images with a placeholder
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzMzMyI+SW1hZ2UgbG9hZCBlcnJvcjwvdGV4dD48L3N2Zz4=';
-                                  }}
-                                />
-                              );
-                            },
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
+                              },
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        )}
                       </div>
                     </div>
                   </motion.div>
