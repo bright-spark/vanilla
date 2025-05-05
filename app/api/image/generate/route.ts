@@ -1,17 +1,87 @@
 import { NextRequest } from 'next/server';
 
-// Import the config with a type assertion to avoid TypeScript errors
+// Import the config and explicitly type it
 // @ts-ignore - Suppress TypeScript errors for this import
-import configImport from '@/config';
+import config from '@/config';
 
-// Create a properly typed config object
-// @ts-ignore - Suppress TypeScript errors for this assignment
-const config = configImport as {
+// Declare the type for TypeScript
+declare const config: {
   apiBaseUrl: string;
   apiKey: string;
   useMockData: boolean;
 };
 
+/**
+ * Fetch with retry and exponential backoff
+ * @param url The URL to fetch
+ * @param options Fetch options with retry configuration
+ * @returns Promise with the fetch response
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit & {
+    maxRetries?: number;
+    initialDelay?: number;
+    maxDelay?: number;
+    backoffFactor?: number;
+  } = {}
+): Promise<Response> {
+  const {
+    maxRetries = 3,
+    initialDelay = 1000,
+    maxDelay = 10000,
+    backoffFactor = 2,
+    ...fetchOptions
+  } = options;
+
+  let lastError: Error | undefined;
+  let delay = initialDelay;
+
+  for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+    try {
+      console.log(`Attempt ${retryCount + 1}/${maxRetries + 1} to fetch ${url}`);
+      const response = await fetch(url, fetchOptions);
+      
+      // If the response is successful, return it
+      if (response.ok) {
+        return response;
+      }
+
+      // If we've reached the maximum number of retries, return the last response
+      if (retryCount === maxRetries) {
+        console.log(`Maximum retries reached (${maxRetries}). Returning last response.`);
+        return response;
+      }
+
+      // Calculate the delay for the next retry
+      delay = Math.min(delay * backoffFactor, maxDelay);
+      
+      console.log(`Request failed with status ${response.status}. Retrying in ${delay}ms...`);
+      
+      // Wait before the next retry
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } catch (error) {
+      lastError = error as Error;
+      
+      // If we've reached the maximum number of retries, throw the last error
+      if (retryCount === maxRetries) {
+        console.log(`Maximum retries reached (${maxRetries}). Throwing error.`);
+        throw lastError;
+      }
+
+      // Calculate the delay for the next retry
+      delay = Math.min(delay * backoffFactor, maxDelay);
+      
+      console.log(`Request failed with error: ${lastError.message}. Retrying in ${delay}ms...`);
+      
+      // Wait before the next retry
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // This should never happen, but TypeScript requires a return statement
+  throw lastError || new Error('Maximum retries reached');
+}
 
 /**
  * Generates a fallback image data URL with the prompt text
@@ -61,36 +131,41 @@ export async function POST(req: NextRequest) {
 
     console.log('Image generation request:', { prompt });
     
-    // Forward the prompt to the appropriate API based on environment
-    const response = await fetch(`${config.apiBaseUrl}/v1/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        prompt,
-        n: 1,
-        size: '1024x1024',
-        model: 'dall-e-3',
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      return new Response(
-        JSON.stringify({
-          error: {
-            message: errorData.error?.message || 'Error generating image',
-            type: 'api_error',
-          },
-        }),
-        { status: response.status }
-      );
-    }
-
+    // Make the API request to RedBuilder API with retry mechanism
     try {
-      // Return the response from the multimodel API
+      const response = await fetchWithRetry(`${config.apiBaseUrl}/api/v1/image/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          prompt,
+          model: 'stable-diffusion-v1-5',
+          n: 1,
+          size: '512x512',
+        }),
+        // Retry configuration
+        maxRetries: 3,
+        initialDelay: 1000,
+        maxDelay: 8000,
+        backoffFactor: 2
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: errorData.error?.message || 'Error generating image',
+              type: 'api_error',
+            },
+          }),
+          { status: response.status }
+        );
+      }
+
+      // Return the response from the RedBuilder API
       const data = await response.json();
       console.log('Image generation response:', data);
       
@@ -139,33 +214,51 @@ export async function POST(req: NextRequest) {
           'Content-Type': 'application/json',
         },
       });
-    } catch (parseError) {
-      console.error('Error parsing image generation response:', parseError);
+    } catch (apiError) {
+      console.error('Error calling image generation API:', apiError);
+      
+      // If we're in development mode, generate a fallback image
+      if (config.useMockData) {
+        console.log('Using fallback image in development mode');
+        const fallbackUrl = generateFallbackImage(prompt);
+        
+        // Return a mock response with the fallback image
+        return new Response(
+          JSON.stringify({
+            created: Date.now(),
+            data: [
+              {
+                url: fallbackUrl,
+                revised_prompt: prompt,
+              },
+            ],
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      }
+      
+      // Otherwise, return an error response
       return new Response(
         JSON.stringify({
           error: {
-            message: 'Error parsing image generation response',
-            type: 'parse_error',
+            message: apiError instanceof Error ? apiError.message : 'Error generating image',
+            type: 'api_error',
           },
         }),
         { status: 500 }
       );
     }
-  } catch (error: any) {
-    // Enhanced error logging
-    console.error('Image generation error:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-      details: error
-    });
-    
+  } catch (error) {
+    console.error('Error processing image generation request:', error);
     return new Response(
       JSON.stringify({
         error: {
-          message: error.message || 'An internal error occurred',
-          type: 'internal_error',
-          details: JSON.stringify(error, Object.getOwnPropertyNames(error))
+          message: error instanceof Error ? error.message : 'Error processing request',
+          type: 'server_error',
         },
       }),
       { status: 500 }

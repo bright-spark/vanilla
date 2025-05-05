@@ -1,0 +1,110 @@
+import React, { useRef, useEffect } from 'react';
+import { Send } from 'lucide-react';
+import ModelSelector from './ModelSelector';
+
+interface ChatInputProps {
+  input: string;
+  isLoading: boolean;
+  isGeneratingImage: boolean;
+  selectedImage: string | null;
+  theme: 'light' | 'dark';
+  selectedModel: string;
+  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  handleSubmit: (e?: React.FormEvent) => void;
+  adjustTextareaHeight: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onModelChange: (model: string) => void;
+}
+
+const ChatInput: React.FC<ChatInputProps> = ({
+  input,
+  isLoading,
+  isGeneratingImage,
+  selectedImage,
+  theme,
+  selectedModel,
+  handleInputChange,
+  handleSubmit,
+  adjustTextareaHeight,
+  onModelChange
+}) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the textarea when the component mounts
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
+  return (
+    <>
+      {/* Desktop input area */}
+      <div 
+        className={`fixed bottom-0 left-0 right-0 hidden md:block transition-colors duration-300 ${theme === 'dark' ? 'bg-[#171717]' : 'bg-[#f7f7f7]'}`} 
+        style={{ width: 'calc(100vw - 60px)', marginLeft: '60px', zIndex: 10 }}
+      >
+        <div className="w-full max-w-[800px] mx-auto px-4 pb-6 pt-2">
+          <div className={`rounded-xl p-3 shadow-lg transition-colors duration-300 ${theme === 'dark' ? 'bg-[#1c1c1c]' : 'bg-white border border-neutral-200'}`}> 
+            <form onSubmit={handleSubmit} className="flex items-end gap-2">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  handleInputChange(e);
+                  adjustTextareaHeight(e);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                placeholder="Message..."
+                rows={1}
+                className="flex-1 p-3 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words rounded-lg"
+                style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+                disabled={isLoading}
+              />
+              <div className="flex items-center gap-2">
+                <ModelSelector 
+                  selectedModel={selectedModel} 
+                  onModelChange={onModelChange} 
+                />
+                <button
+                  type="submit"
+                  disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
+                  className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#f97316] hover:bg-[#ea580c] focus:ring-[#f97316]' : 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400'}`}
+                  style={{ minWidth: 44, minHeight: 44 }}
+                >
+                  <Send className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile floating action button */}
+      <div className="fixed bottom-6 right-6 hidden sm:flex md:hidden z-50">
+        <button
+          onClick={() => {
+            // Show the mobile input modal
+            const mobileInputArea = document.getElementById('mobile-input-area');
+            if (mobileInputArea) {
+              mobileInputArea.classList.remove('hidden');
+              mobileInputArea.classList.add('flex');
+              setTimeout(() => {
+                textareaRef.current?.focus();
+              }, 100);
+            }
+          }}
+          className={`rounded-full w-16 h-16 flex items-center justify-center shadow-lg transition-colors ${theme === 'dark' ? 'bg-[#f97316]' : 'bg-orange-500'}`}
+        >
+          <span className="w-8 h-8 text-white">+</span>
+        </button>
+      </div>
+    </>
+  );
+};
+
+export default ChatInput;

@@ -1,5 +1,5 @@
 "use client";
-import { Chat } from '@/components/chat';
+import Chat from '@/components/chat';
 import { Sidebar } from '@/components/sidebar';
 import { useState } from 'react';
 

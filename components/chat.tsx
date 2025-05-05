@@ -1,10 +1,43 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Plus, Send, Sun, Moon, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Plus, Send, Sun, Moon } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ModelSelector } from './model-selector';
+import { fetchWithRetry, fetchJsonWithRetry } from '../lib/api';
+
+// Import refactored components
+import StatusLED from './StatusLED';
+import ModelSelector from './ModelSelector';
+import MessageItem from './MessageItem';
+import ChatInput from './ChatInput';
+import MobileInput from './MobileInput';
+import ExportMenu from './ExportMenu';
+import EmptyChat from './EmptyChat';
+
+// Define types for API responses
+interface ImageGenerationResponse {
+  data?: Array<{
+    url?: string;
+    revised_prompt?: string;
+    urls?: Record<string, string>;
+  }>;
+  url?: string;
+  imageUrl?: string;
+  error?: {
+    message: string;
+    type: string;
+  };
+}
+
+interface ChatResponse {
+  id?: string;
+  content: string;
+  error?: {
+    message: string;
+    type: string;
+  };
+}
 
 // Define the message interface
 interface ChatMessage {
@@ -88,8 +121,17 @@ function StatusLED({ status, theme }: { status: 'idle' | 'waiting' | 'error' | '
   );
 }
 
-export function Chat() {
+export default function Chat() {
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevError = useRef(false);
+  const bgRef = useRef<HTMLDivElement>(null);
+  
+  // State for model selection
   const [selectedModel, setSelectedModel] = useState('@cf/meta/llama-4-scout-17b-16e-instruct');
+  
+  // State for messages
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'system-0',
@@ -97,17 +139,35 @@ export function Chat() {
       content: 'You are a helpful AI assistant.',
     },
   ]);
+  
+  // State for input
   const [input, setInput] = useState('');
+  
+  // State for loading
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [newMsgFlash, setNewMsgFlash] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [parallax, setParallax] = useState(0);
-  const bgRef = useRef<HTMLDivElement>(null);
-  const [statusLED, setStatusLED] = useState<'idle' | 'waiting' | 'error' | 'new-message' | 'recovered'>('idle');
-  const prevError = useRef(false);
+  
+  // State for error
+  const [error, setError] = useState(false);
+  
+  // State for theme
   const [theme, setTheme] = useState<'light' | 'dark'>(typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  
+  // State for status LED
+  const [statusLED, setStatusLED] = useState<'idle' | 'waiting' | 'error' | 'new-message' | 'recovered'>('idle');
+  
+  // State for new message flash
+  const [newMsgFlash, setNewMsgFlash] = useState(false);
+  
+  // State for parallax effect
+  const [parallax, setParallax] = useState(0);
+  
+  // State for selected image
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  
+  // State for copy functionality
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [copiedChat, setCopiedChat] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -153,14 +213,40 @@ export function Chat() {
     };
   }, []);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
+  // Focus the textarea on component mount
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
+  // Effect to scroll to the top of new message replies
+  useEffect(() => {
+    if (messages.length > 0 && messagesEndRef.current) {
+      // Find the last assistant message
+      const lastAssistantMessageIndex = [...messages].reverse().findIndex(msg => msg.role === 'assistant');
+      
+      if (lastAssistantMessageIndex !== -1) {
+        // Get the actual index in the original array
+        const messageIndex = messages.length - 1 - lastAssistantMessageIndex;
+        
+        // Find all message elements
+        const messageElements = document.querySelectorAll('#message-container > div > div');
+        
+        // If we found the message element, scroll it into view
+        if (messageElements[messageIndex]) {
+          messageElements[messageIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          // Fallback to scrolling to the end
+          messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      } else {
+        // If no assistant message, scroll to the end
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   }, [messages]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newInput = e.target.value;
@@ -278,16 +364,33 @@ export function Chat() {
       // Set loading state
       setIsGeneratingImage(true);
       
-      // Call the image generation API
+      // Call the image generation API with retry mechanism
       try {
-        const res = await fetch('/api/image/generate', {
+        const data = await fetchJsonWithRetry<ImageGenerationResponse>('/api/image/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt }),
+          maxRetries: 3,
+          initialDelay: 1000,
+          backoffFactor: 1.5,
+          // Only retry on network errors or 5xx server errors
+          shouldRetry: (response) => response.status >= 500 || !response.ok,
+          shouldRetryOnError: (error) => {
+            // Retry on network errors (like connection refused)
+            return error.name === 'TypeError' || error.message.includes('network') || error.message.includes('connection');
+          },
+          // Show retry status to the user
+          onRetry: (retryCount, delay, error) => {
+            console.log(`Retrying image generation (${retryCount}/3) after ${delay}ms delay...`);
+            // Update the user message to show retry status
+            setMessages(msgs => msgs.map(msg => 
+              msg.isGenerating ? { 
+                ...msg, 
+                content: `Generating image from prompt: "${prompt}" (Retry ${retryCount}/3 - ${error ? error.message : 'Server error'})` 
+              } : msg
+            ));
+          }
         });
-        
-        if (!res.ok) throw new Error('API error');
-        const data = await res.json();
         
         if (data.error) throw new Error(data.error.message || 'Error generating image');
         
@@ -313,38 +416,12 @@ export function Chat() {
           throw new Error('No image URL in response');
         }
         
-        // Check if it's a mock error URL
-        const isMockUrl = imageUrl.includes('mock-error') || imageUrl.includes('api.redbuilder.io');
+        // Check if it's a mock error URL, but NOT from the RedBuilder API
+        const isMockUrl = imageUrl.includes('mock-error') && !imageUrl.includes('api.redbuilder.io');
         if (isMockUrl) {
           console.log('Detected mock URL, using fallback');
           // Instead of throwing an error, we'll use a placeholder
           imageUrl = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHJlY3Qgd2lkdGg9IjkwJSIgaGVpZ2h0PSI5MCUiIHg9IjUlIiB5PSI1JSIgZmlsbD0iI2UwZTBlMCIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiLz48dGV4dCB4PSI1MCUiIHk9IjMwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjI0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMzMzIj5JbWFnZSBHZW5lcmF0aW9uPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNDAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM1NTUiPkZhbGxiYWNrIHBsYWNlaG9sZGVyPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM3NzciPiR7cHJvbXB0LnN1YnN0cmluZygwLCAzMCl9JHtwcm9tcHQubGVuZ3RoID4gMzAgPyAnLi4uJyA6ICcnfTwvdGV4dD48dGV4dCB4PSI1MCUiIHk9IjcwJSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5EZXZlbG9wbWVudCBtb2RlPC90ZXh0Pjwvc3ZnPg==`;
-        }
-        
-        // Fix URL format for R2 storage
-        if (imageUrl && !imageUrl.startsWith('data:')) {
-          console.log('Checking image URL format:', imageUrl.substring(0, 50) + '...');
-          
-          // Extract the filename from the URL
-          const urlParts = imageUrl.split('/');
-          const filename = urlParts[urlParts.length - 1];
-          
-          // Check for various URL patterns and fix them
-          if (imageUrl.includes('api.redbuilder.io/images/generations/')) {
-            // Convert to the working R2 bucket URL format
-            console.log('Converting API URL to R2 bucket URL');
-            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
-          } else if (imageUrl.includes('multimodel-images.redbuilder.io/generations/')) {
-            // Fix the old R2 bucket domain
-            console.log('Fixing old R2 bucket domain');
-            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
-          } else if (imageUrl.includes('/images/generations/') && !imageUrl.includes('multi.redbuilder.io')) {
-            // Generic fix for other domain patterns
-            console.log('Applying generic URL fix');
-            imageUrl = `https://multi.redbuilder.io/generations/${filename}`;
-          }
-          
-          console.log('Final image URL:', imageUrl.substring(0, 50) + '...');
         }
         
         // First, remove the isGenerating flag from the user message
@@ -381,6 +458,13 @@ export function Chat() {
       } finally {
         setIsGeneratingImage(false);
         setIsLoading(false);
+        
+        // Focus the textarea after image generation is complete
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+        }, 100);
       }
       
       return;
@@ -408,8 +492,8 @@ export function Chat() {
         // This avoids sending large data URLs in the JSON payload
         const isDataUrl = selectedImage.startsWith('data:');
         
-        // Make API request with the image
-        const res = await fetch('/api/chat', {
+        // Make API request with the image using retry mechanism
+        const data = await fetchJsonWithRetry<ChatResponse>('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -419,10 +503,18 @@ export function Chat() {
             }],
             model: selectedModel || '@cf/meta/llama-4-scout-17b-16e-instruct',
           }),
+          maxRetries: 3,
+          initialDelay: 1000,
+          backoffFactor: 1.5,
+          shouldRetry: (response) => response.status >= 500 || !response.ok,
+          shouldRetryOnError: (error) => {
+            return error.name === 'TypeError' || error.message.includes('network') || error.message.includes('connection');
+          },
+          onRetry: (retryCount, delay, error) => {
+            console.log(`Retrying chat with image (${retryCount}/3) after ${delay}ms delay...`);
+            // Show retry status in UI if needed
+          }
         });
-        
-        if (!res.ok) throw new Error('API error');
-        const data = await res.json();
         
         setMessages(msgs => [
           ...msgs,
@@ -438,6 +530,13 @@ export function Chat() {
       } finally {
         setIsLoading(false);
         setSelectedImage(null);
+        
+        // Focus the textarea after submission
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+        }, 100);
       }
       
       return;
@@ -454,46 +553,49 @@ export function Chat() {
     setInput('');
     
     try {
-      const res = await fetch('/api/chat', {
+      // Use retry mechanism for regular chat messages
+      const data = await fetchJsonWithRetry<ChatResponse>('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages,
           model: selectedModel || '@cf/meta/llama-4-scout-17b-16e-instruct',
         }),
+        maxRetries: 3,
+        initialDelay: 1000,
+        backoffFactor: 1.5,
+        shouldRetry: (response) => response.status >= 500 || !response.ok,
+        shouldRetryOnError: (error) => {
+          return error.name === 'TypeError' || error.message.includes('network') || error.message.includes('connection');
+        },
+        onRetry: (retryCount, delay, error) => {
+          console.log(`Retrying chat (${retryCount}/3) after ${delay}ms delay...`);
+          // Show retry status to the user
+          setStatusLED('waiting');
+          // We could update a message here to show retry status if desired
+        }
       });
-      if (!res.ok) {
-        console.error(`API error: ${res.status} ${res.statusText}`);
-        throw new Error(`API error: ${res.status} ${res.statusText}`);
-      }
-      
-      try {
-        const data = await res.json();
         
-        setMessages(msgs => [
-          ...msgs,
-          {
-            id: data.id || `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: data.content || 'Sorry, I encountered an error processing your request.',
-          },
-        ]);
-      } catch (jsonError) {
-        console.error('Error parsing API response:', jsonError);
-        setMessages(msgs => [
-          ...msgs,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: 'Sorry, I encountered an error processing your request. The API response could not be parsed.',
-          },
-        ]);
-      }
+      setMessages(msgs => [
+        ...msgs,
+        {
+          id: data.id || `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: data.content || 'Sorry, I encountered an error processing your request.',
+        },
+      ]);
     } catch (error) {
       setError(true);
       console.error('Chat error:', error);
     } finally {
       setIsLoading(false);
+      
+      // Focus the textarea after submission
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 100);
     }
   };
 
@@ -590,7 +692,7 @@ export function Chat() {
                         handleKeyDown(e);
                       }
                     }}
-                    placeholder="Type your message..."
+                    placeholder="Message..."
                     rows={1}
                     className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
                     style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
@@ -619,9 +721,140 @@ export function Chat() {
   }
 
   return (
-    <div className={`relative flex flex-col min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'bg-[#171717] text-neutral-50' : 'bg-[#f7f7f7] text-neutral-900'}`}>
-      {/* Top right controls: theme toggle and status LED */}
+    <div className={`relative flex flex-col min-h-screen w-screen overflow-x-hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-[#171717] text-neutral-50' : 'bg-[#f7f7f7] text-neutral-900'}`}>
+      {/* Top right controls: theme toggle, export options, and status LED */}
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+        <div className="relative group">
+          <button
+            aria-label="Export chat"
+            className="bg-transparent p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 focus:outline-none"
+            title="Export chat"
+          >
+            <Download className="w-5 h-5" style={{ color: theme === 'dark' ? '#fff' : '#6b7280' }} />
+          </button>
+          
+          {/* Dropdown menu for export options */}
+          <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg overflow-hidden z-50 scale-0 group-hover:scale-100 origin-top-right transition-transform duration-150 ease-in-out">
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  // Copy entire chat to clipboard with error handling
+                  const chatText = messages
+                    .filter(msg => msg.role !== 'system')
+                    .map(msg => `${msg.role === 'user' ? 'You' : 'Assistant'}: ${msg.content}`)
+                    .join('\n\n');
+                  
+                  // Use a fallback approach for clipboard operations
+                  const copyToClipboard = async (text: string) => {
+                    try {
+                      // Try the modern Clipboard API first
+                      await navigator.clipboard.writeText(text);
+                      return true;
+                    } catch (err) {
+                      // If Clipboard API fails, try the older execCommand approach
+                      try {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = text;
+                        textArea.style.position = 'fixed';
+                        textArea.style.left = '-999999px';
+                        textArea.style.top = '-999999px';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        const success = document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        return success;
+                      } catch (execErr) {
+                        console.error('Fallback clipboard method failed:', execErr);
+                        return false;
+                      }
+                    }
+                  };
+                  
+                  // Attempt to copy and handle the result
+                  copyToClipboard(chatText).then(success => {
+                    if (success) {
+                      setCopiedChat(true);
+                      setTimeout(() => setCopiedChat(false), 2000);
+                    } else {
+                      alert('Unable to copy to clipboard. Your browser may be blocking this feature.');
+                    }
+                  }).catch(err => {
+                    console.error('Failed to copy chat:', err);
+                    alert('Unable to copy to clipboard. Your browser may be blocking this feature.');
+                  });
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                {copiedChat ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedChat ? 'Copied!' : 'Copy to clipboard'}
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Print chat as PDF
+                  const printWindow = window.open('', '_blank');
+                  if (printWindow) {
+                    const chatHtml = `
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Chat Export</title>
+                        <style>
+                          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+                          .message { margin-bottom: 20px; padding: 15px; border-radius: 10px; }
+                          .user { background-color: #f0f0f0; margin-left: 50px; }
+                          .assistant { background-color: #f9f9f9; margin-right: 50px; }
+                          h4 { margin-top: 0; color: #555; }
+                          .timestamp { color: #888; font-size: 12px; margin-top: 5px; }
+                        </style>
+                      </head>
+                      <body>
+                        <h2>Chat Export - ${new Date().toLocaleString()}</h2>
+                        ${messages
+                          .filter(msg => msg.role !== 'system')
+                          .map(msg => `
+                            <div class="message ${msg.role}">
+                              <h4>${msg.role === 'user' ? 'You' : 'Assistant'}</h4>
+                              <div>${msg.content.replace(/\n/g, '<br>')}</div>
+                            </div>
+                          `).join('')}
+                      </body>
+                      </html>
+                    `;
+                    printWindow.document.write(chatHtml);
+                    printWindow.document.close();
+                    setTimeout(() => {
+                      printWindow.print();
+                    }, 500);
+                  }
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print to PDF
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Create mailto link with chat content
+                  const subject = encodeURIComponent('Chat Export');
+                  const chatText = messages
+                    .filter(msg => msg.role !== 'system')
+                    .map(msg => `${msg.role === 'user' ? 'You' : 'Assistant'}: ${msg.content}`)
+                    .join('\n\n');
+                  const body = encodeURIComponent(chatText);
+                  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <Mail className="w-4 h-4" />
+                Email as PDF
+              </button>
+            </div>
+          </div>
+        </div>
+        
         <button
           aria-label="Toggle theme"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -638,36 +871,91 @@ export function Chat() {
       </div>
 
       {/* Message history container */}
-      <div className="flex-1 flex flex-col items-center">
-        <div className="w-full max-w-3xl mx-auto px-4 pb-24 sm:pb-0">
-          <div className="flex flex-col space-y-3 py-4 px-2">
+      <div className="flex-1 flex flex-col items-center" style={{ width: 'calc(100vw - 60px)', marginLeft: '60px', zIndex: 0 }}>
+        <div className="w-full max-w-[800px] mx-auto px-4 pb-32 md:pb-24">
+          <div className="flex flex-col space-y-3 py-4 px-2" id="message-container">
             <AnimatePresence initial={false}>
               {messages.map((message, idx) => (
                 message.role !== 'system' && (
                   <motion.div
                     key={message.id}
-                    className="flex items-start space-x-4"
+                    className="flex items-start"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 20 }}
                     transition={{ duration: 0.25 }}
                   >
-                    {/* User avatar for user messages */}
-                    {message.role === 'user' && (
-                      <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-white font-bold shrink-0">
-                        M
-                      </div>
-                    )}
-                    <div className={`flex-1 max-w-full sm:max-w-[85%] ${message.role === 'user' ? 'ml-0' : 'ml-11'}`}>
-                      <div className={`rounded-2xl p-5 text-base transition-colors duration-300 ${
+                    {/* No user avatar - more minimal look */}
+                    <div className="flex-1 max-w-full">
+                      <div className={`relative rounded-2xl p-5 text-base transition-colors duration-300 ${
                         message.role === 'assistant'
                           ? theme === 'dark'
-                            ? 'bg-[#1c1c1c] text-neutral-100'
-                            : 'bg-white text-neutral-900 border border-neutral-200'
+                            ? 'bg-[#1c1c1c] text-neutral-100 w-full'
+                            : 'bg-white text-neutral-900 border border-neutral-200 w-full'
                           : theme === 'dark'
-                            ? 'bg-[#232323] text-white'
-                            : 'bg-[#f3f3f3] text-neutral-900 border border-neutral-200'
+                            ? 'bg-[#232323] text-white w-[85%] ml-auto' /* User messages aligned to right */
+                            : 'bg-[#f3f3f3] text-neutral-900 border border-neutral-200 w-[85%] ml-auto' /* User messages aligned to right */
                       }`}>
+                        {/* Copy button for assistant messages */}
+                        {message.role === 'assistant' && (
+                          <button 
+                            onClick={() => {
+                              // Copy message content to clipboard with error handling
+                              try {
+                                // Use a fallback approach for clipboard operations
+                                const copyToClipboard = async (text: string) => {
+                                  try {
+                                    // Try the modern Clipboard API first
+                                    await navigator.clipboard.writeText(text);
+                                    return true;
+                                  } catch (err) {
+                                    // If Clipboard API fails, try the older execCommand approach
+                                    try {
+                                      const textArea = document.createElement('textarea');
+                                      textArea.value = text;
+                                      textArea.style.position = 'fixed';
+                                      textArea.style.left = '-999999px';
+                                      textArea.style.top = '-999999px';
+                                      document.body.appendChild(textArea);
+                                      textArea.focus();
+                                      textArea.select();
+                                      const success = document.execCommand('copy');
+                                      document.body.removeChild(textArea);
+                                      return success;
+                                    } catch (execErr) {
+                                      console.error('Fallback clipboard method failed:', execErr);
+                                      return false;
+                                    }
+                                  }
+                                };
+                                
+                                // Attempt to copy and handle the result
+                                copyToClipboard(message.content).then(success => {
+                                  if (success) {
+                                    // Set copied state for this message
+                                    setCopiedMessageId(message.id);
+                                    // Reset after 2 seconds
+                                    setTimeout(() => setCopiedMessageId(null), 2000);
+                                  } else {
+                                    // Show a notification that copying failed
+                                    alert('Unable to copy to clipboard. Your browser may be blocking this feature.');
+                                  }
+                                });
+                              } catch (err) {
+                                console.error('Copy operation failed:', err);
+                                alert('Unable to copy to clipboard. Your browser may be blocking this feature.');
+                              }
+                            }}
+                            className="absolute top-1.5 right-1.5 p-1 rounded-full opacity-50 hover:opacity-100 transition-opacity bg-gray-100 dark:bg-gray-800"
+                            title="Copy message"
+                          >
+                            {copiedMessageId === message.id ? (
+                              <Check className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                         {message.isGenerating ? (
                           <div className="flex flex-col items-center justify-center p-4">
                             <div className="relative w-16 h-16 mb-4">
@@ -723,48 +1011,126 @@ export function Chat() {
         </div>
       </div>
 
-      {/* Mobile fixed input bar */}
-      <div className={`fixed bottom-0 left-0 right-0 z-40 block sm:hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-[#171717]' : 'bg-[#f7f7f7]'}`}>
-        <div className="w-full max-w-2xl mx-auto px-2 pb-4 pt-2">
+      {/* Input area at the bottom - desktop version */}
+      <div className={`fixed bottom-0 left-0 right-0 hidden md:block transition-colors duration-300 ${theme === 'dark' ? 'bg-[#171717]' : 'bg-[#f7f7f7]'}`} style={{ width: 'calc(100vw - 60px)', marginLeft: '60px', zIndex: 10 }}>
+        <div className="w-full max-w-[800px] mx-auto px-4 pb-6 pt-2">
           <div className={`rounded-xl p-3 shadow-lg transition-colors duration-300 ${theme === 'dark' ? 'bg-[#1c1c1c]' : 'bg-white border border-neutral-200'}`}> 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <div className="flex items-end gap-2">
-                <label htmlFor="file-upload-chat-mobile" className="cursor-pointer">
-                  <div className="rounded-lg hover:bg-neutral-800 p-3 transition-colors">
-                    <Plus className="w-5 h-5 text-neutral-400 hover:text-white" />
-                  </div>
-                  <input
-                    id="file-upload-chat-mobile"
-                    type="file"
-                    className="hidden"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                  />
-                </label>
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={adjustTextareaHeight}
-                  onKeyDown={handleKeyDown}
-                  placeholder=""
-                  rows={1}
-                  className={`flex-1 p-2 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 ${theme === 'dark' ? 'text-neutral-50' : 'text-neutral-900'}`}
-                  disabled={isLoading}
-                />
-                <div className="flex items-center gap-2">
-                  <ModelSelector />
-                  <button
-                    type="submit"
-                    disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
-                    className="rounded-lg bg-[#7c4a2d] hover:bg-[#f97316] transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#f97316]"
-                    style={{ minWidth: 44, minHeight: 44 }}
-                  >
-                    <Send className="w-5 h-5 text-white" />
-                  </button>
-                </div>
+            <form onSubmit={handleSubmit} className="flex items-end gap-2">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  handleInputChange(e);
+                  adjustTextareaHeight(e);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                placeholder="Message..."
+                rows={1}
+                className="flex-1 p-3 min-w-0 bg-transparent resize-none outline-none min-h-[44px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words rounded-lg"
+                style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+                disabled={isLoading}
+              />
+              <div className="flex items-center gap-2">
+                <ModelSelector />
+                <button
+                  type="submit"
+                  disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
+                  className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#f97316] hover:bg-[#ea580c] focus:ring-[#f97316]' : 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400'}`}
+                  style={{ minWidth: 44, minHeight: 44 }}
+                >
+                  <Send className="w-5 h-5 text-white" />
+                </button>
               </div>
             </form>
           </div>
+        </div>
+      </div>
+      
+      {/* Mobile floating action button island */}
+      <div className="fixed bottom-6 right-6 hidden sm:flex md:hidden z-50">
+        <button
+          onClick={() => {
+            // Show the mobile input modal
+            const mobileInputArea = document.getElementById('mobile-input-area');
+            if (mobileInputArea) {
+              mobileInputArea.classList.remove('hidden');
+              mobileInputArea.classList.add('flex');
+              setTimeout(() => {
+                textareaRef.current?.focus();
+              }, 100);
+            }
+          }}
+          className={`rounded-full w-16 h-16 flex items-center justify-center shadow-lg transition-colors ${theme === 'dark' ? 'bg-[#f97316]' : 'bg-orange-500'}`}
+        >
+          <Plus className="w-8 h-8 text-white" />
+        </button>
+      </div>
+      
+      {/* Mobile slide-up input area */}
+      <div id="mobile-input-area" className="fixed bottom-0 left-0 right-0 hidden sm:hidden md:hidden z-50 transition-all duration-300 transform bg-black bg-opacity-50">
+        <div className={`w-full p-4 rounded-t-xl shadow-lg transition-colors duration-300 ${theme === 'dark' ? 'bg-[#1c1c1c]' : 'bg-white'}`}>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto"></div>
+              <button 
+                type="button" 
+                className="absolute right-4 top-4 text-gray-500"
+                onClick={() => {
+                  const mobileInputArea = document.getElementById('mobile-input-area');
+                  if (mobileInputArea) {
+                    mobileInputArea.classList.add('hidden');
+                    mobileInputArea.classList.remove('flex');
+                  }
+                }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                handleInputChange(e);
+                adjustTextareaHeight(e);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                  
+                  // Close the mobile input area after sending
+                  const mobileInputArea = document.getElementById('mobile-input-area');
+                  if (mobileInputArea) {
+                    mobileInputArea.classList.add('hidden');
+                    mobileInputArea.classList.remove('flex');
+                  }
+                }
+              }}
+              placeholder="Message..."
+              rows={3}
+              className="w-full p-3 bg-transparent resize-none outline-none min-h-[80px] max-h-[200px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-gray-300 dark:border-gray-700"
+              style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+              disabled={isLoading}
+            />
+            
+            <div className="flex items-center justify-between mt-3">
+              <ModelSelector />
+              <button
+                type="submit"
+                disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
+                className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#f97316] hover:bg-[#ea580c] focus:ring-[#f97316]' : 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400'}`}
+                style={{ minWidth: 44, minHeight: 44 }}
+              >
+                <Send className="w-5 h-5 text-white" />
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
