@@ -90,12 +90,18 @@ async function generateImageFromPrompt(prompt: string): Promise<string> {
     // Use the RedBuilder API for image generation
     const typedConfig = config as Config;
     
-    // If no API key is available, use the fallback
+    // If no API key is available, inform the user and return an error
     if (!typedConfig.apiKey) {
-      console.log('No API key available, using fallback image');
-      return generateFallbackPlaceholder(prompt);
+      console.log('No API key available for image generation');
+      throw new Error('API key is required for image generation');
     }
     
+    // Enhance the prompt for better image generation
+    const enhancedPrompt = `high quality, detailed image of ${prompt}`;
+    
+    console.log(`Using enhanced prompt for image generation: "${enhancedPrompt}"`)
+    
+    // Try OpenAI's DALL-E endpoint first
     const response = await fetchWithRetry(`${typedConfig.apiBaseUrl}/v1/images/generations`, {
       method: 'POST',
       headers: {
@@ -103,9 +109,11 @@ async function generateImageFromPrompt(prompt: string): Promise<string> {
         'Authorization': `Bearer ${typedConfig.apiKey}`
       },
       body: JSON.stringify({
-        prompt,
+        prompt: enhancedPrompt,
+        model: 'dall-e-3',  // Use DALL-E 3 for better quality
         n: 1,
-        size: '512x512',
+        size: '1024x1024',  // Higher resolution
+        quality: 'standard',
         response_format: 'url'
       }),
       maxRetries: 3,
@@ -118,19 +126,35 @@ async function generateImageFromPrompt(prompt: string): Promise<string> {
     
     const data = await response.json();
     
-    // Handle different response formats
+    // Handle different response formats and fix URL format
+    let imageUrl = '';
+    
     if (data.data && data.data.length > 0) {
-      return data.data[0].url || '';
+      imageUrl = data.data[0].url || '';
     } else if (data.url) {
-      return data.url;
+      imageUrl = data.url;
     } else if (data.imageUrl) {
-      return data.imageUrl;
+      imageUrl = data.imageUrl;
     } else {
       throw new Error('No image URL in response');
     }
+    
+    // Fix the URL format if needed
+    if (imageUrl) {
+      // Extract the filename from the URL
+      const urlParts = imageUrl.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      
+      // Use a more reliable URL format
+      return `https://multi.redbuilder.io/generations/${filename}`;
+    } else {
+      throw new Error('Invalid image URL');
+    }
   } catch (error) {
     console.error('Error generating image from RedBuilder API:', error);
-    // Fallback to a placeholder if the API call fails
+    
+    // Only use the fallback image if the API fails
+    console.log('API failed, using fallback image');
     return generateFallbackPlaceholder(prompt);
   }
 }

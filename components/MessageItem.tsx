@@ -129,17 +129,60 @@ const MessageItem: React.FC<MessageItemProps> = ({
                     );
                   }
                   
+                  // State to track image loading status
+                  const [isLoading, setIsLoading] = React.useState(true);
+                  const [hasError, setHasError] = React.useState(false);
+                  const [imgSrc, setImgSrc] = React.useState(props.src);
+                  
+                  // Function to handle image load errors
+                  const handleImageError = () => {
+                    console.error(`Failed to load image: ${imgSrc}`);
+                    setHasError(true);
+                    setIsLoading(false);
+                    
+                    // Try to fix the URL if it's from RedBuilder API
+                    if (imgSrc.includes('api.redbuilder.io')) {
+                      // Extract the filename from the URL
+                      const urlParts = imgSrc.split('/');
+                      const filename = urlParts[urlParts.length - 1];
+                      
+                      // Use a more reliable URL format
+                      const newSrc = `https://multi.redbuilder.io/generations/${filename}`;
+                      console.log(`Trying alternative URL: ${newSrc}`);
+                      setImgSrc(newSrc);
+                      setHasError(false);
+                    }
+                  };
+                  
                   return (
-                    <img
-                      {...props}
-                      className="max-w-full rounded-lg my-2 max-h-[300px] object-contain"
-                      alt={props.alt || 'Image'}
-                      onError={(e) => {
-                        // Replace broken images with a placeholder
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzMzMyI+SW1hZ2UgbG9hZCBlcnJvcjwvdGV4dD48L3N2Zz4=';
-                      }}
-                    />
+                    <>
+                      {isLoading && (
+                        <div className="flex items-center justify-center w-full h-[200px] bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
+                          <div className="animate-pulse flex space-x-2">
+                            <div className="h-3 w-3 bg-gray-500 dark:bg-gray-400 rounded-full"></div>
+                            <div className="h-3 w-3 bg-gray-500 dark:bg-gray-400 rounded-full"></div>
+                            <div className="h-3 w-3 bg-gray-500 dark:bg-gray-400 rounded-full"></div>
+                          </div>
+                        </div>
+                      )}
+                      {hasError && (
+                        <div className="flex flex-col items-center justify-center w-full h-[200px] bg-gray-100 dark:bg-gray-800 rounded-lg my-2 p-4">
+                          <span className="text-red-500 dark:text-red-400 font-medium mb-2">Image load error</span>
+                          <span className="text-gray-500 dark:text-gray-400 text-sm text-center">
+                            Unable to load image from URL:<br/>
+                            <code className="text-xs break-all">{imgSrc}</code>
+                          </span>
+                        </div>
+                      )}
+                      <img
+                        {...props}
+                        src={imgSrc}
+                        className={`max-w-full rounded-lg my-2 max-h-[300px] object-contain ${isLoading ? 'hidden' : ''} ${hasError ? 'hidden' : ''}`}
+                        alt={props.alt || 'Generated image'}
+                        onLoad={() => setIsLoading(false)}
+                        onError={handleImageError}
+                      />
+                    </>
                   );
                 },
               }}
