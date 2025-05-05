@@ -9,19 +9,30 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "It's me, Kiki.",
-  description: "A helpful AI assistant chat application",
+  description: "A clever girl that wants to learn.",
   manifest: "/manifest.json",
   themeColor: "#f97316",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/icons/apple-touch-icon.png"
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "Kiki"
   },
+  openGraph: {
+    title: "It's me, Kiki.",
+    description: 'A clever girl that wants to learn.',
+    url: 'https://kiki.redbuilder.io',
+    siteName: 'Kiki',
+    images: [{ url: 'https://kiki.redbuilder.io/public/og.png' }]
+  },
   viewport: {
     width: "device-width",
     initialScale: 1,
     maximumScale: 1,
-    userScalable: false
+    userScalable: false,
   }
 };
 
