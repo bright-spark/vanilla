@@ -69,14 +69,10 @@ const MobileInput: React.FC<MobileInputProps> = ({
             />
             
             <div className="flex items-center">
-              <ModelSelector 
-                selectedModel={selectedModel} 
-                onModelChange={onModelChange} 
-              />
               <button
                 type="submit"
                 disabled={(!input.trim() && !selectedImage) || isLoading || isGeneratingImage}
-                className={`ml-2 rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#f97316] hover:bg-[#ea580c] focus:ring-[#f97316]' : 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400'}`}
+                className={`rounded-lg transition-colors p-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-[#f97316] hover:bg-[#ea580c] focus:ring-[#f97316]' : 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400'}`}
                 style={{ minWidth: 44, minHeight: 44 }}
               >
                 <Send className="w-5 h-5 text-white" />
