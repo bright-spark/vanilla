@@ -74,6 +74,7 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const initialThemeLoad = useRef(true);
   const [statusLED, setStatusLED] = useState<'idle' | 'waiting' | 'error' | 'new-message' | 'recovered'>('idle');
   const [newMsgFlash, setNewMsgFlash] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -138,20 +139,41 @@ export default function Chat() {
     };
   }, []);
   
-  // Set theme based on user preference
+  // Set theme based on user preference and system settings
   useEffect(() => {
+    // Check for theme in localStorage first
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
       setTheme(savedTheme);
     } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setTheme('dark');
     }
+    
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (!localStorage.getItem('theme')) { // Only apply if user hasn't set a preference
+        setTheme(e.matches ? 'dark' : 'light');
+      }
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
   
-  // Update theme in localStorage and document
+  // Update theme in localStorage and apply to document
   useEffect(() => {
+    // Save to localStorage
     localStorage.setItem('theme', theme);
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    
+    // Apply theme to document
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
   }, [theme]);
   
   // Listen for model changes from ModelSelector
@@ -604,8 +626,14 @@ export default function Chat() {
         <ExportMenu messages={messages} theme={theme} />
         <button
           aria-label="Toggle theme"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="bg-transparent p-0 m-0 focus:outline-none"
+          onClick={() => {
+            const newTheme = theme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+            // Force immediate visual update
+            document.documentElement.classList.toggle('dark', newTheme === 'dark');
+            document.documentElement.setAttribute('data-theme', newTheme);
+          }}
+          className="bg-transparent p-0 m-0 focus:outline-none transition-colors duration-200"
           style={{ boxShadow: 'none', border: 'none' }}
         >
           {theme === 'dark' ? (
