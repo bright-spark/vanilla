@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Plus, Sun, Moon } from 'lucide-react';
+import { useEnsureInputVisibility } from '../hooks/useEnsureInputVisibility';
 import { fetchWithRetry, fetchJsonWithRetry } from '../lib/api';
 
 // Import refactored components
@@ -52,6 +53,9 @@ export default function Chat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevError = useRef(false);
   const bgRef = useRef<HTMLDivElement>(null);
+  
+  // Use custom hook to ensure mobile input visibility
+  useEnsureInputVisibility();
   
   // State for model selection
   const [selectedModel, setSelectedModel] = useState('gpt-4o');
@@ -613,8 +617,8 @@ export default function Chat() {
         <StatusLED status={statusLED} theme={theme} />
       </div>
       
-      {/* Main chat layout */}
-      <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 sm:pb-32 mb-16 sm:mb-0">
+      {/* Main chat layout - add extra padding at bottom on mobile for the fixed input */}
+      <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 sm:pb-32 mb-24 sm:mb-0">
         <div className="flex flex-col space-y-3 py-4 px-2" id="message-container">
           <AnimatePresence initial={false}>
             {messages.map((message) => (

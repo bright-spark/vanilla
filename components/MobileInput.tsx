@@ -42,8 +42,8 @@ const MobileInput: React.FC<MobileInputProps> = ({
   };
 
   return (
-    <div id="mobile-input-area" className="fixed bottom-0 left-0 right-0 block sm:hidden md:hidden z-50 transition-all duration-300 transform">
-      <div className={`w-full p-3 shadow-lg transition-colors duration-300 border-t ${theme === 'dark' ? 'bg-[#1c1c1c] border-gray-800' : 'bg-white border-gray-200'}`}>
+    <div id="mobile-input-area" className="fixed bottom-0 left-0 right-0 block sm:hidden md:hidden z-[9999] transition-all duration-300 transform">
+      <div className={`w-full p-3 shadow-lg transition-colors duration-300 border-t ${theme === 'dark' ? 'bg-[#1c1c1c] border-gray-800' : 'bg-white border-gray-200'}`} style={{ position: 'sticky', bottom: 0 }}>
         <form onSubmit={handleMobileSubmit} className="flex flex-col gap-2">
           {/* No need for the handle and close button since it's always visible */}
           
