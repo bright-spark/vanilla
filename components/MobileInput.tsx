@@ -63,8 +63,15 @@ const MobileInput: React.FC<MobileInputProps> = ({
               }}
               placeholder="Message..."
               rows={1}
-              className="flex-1 p-3 bg-transparent resize-none outline-none min-h-[44px] max-h-[120px] text-base placeholder-neutral-500 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-gray-300 dark:border-gray-700"
-              style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+              className="flex-1 p-3 bg-transparent resize-none outline-none min-h-[44px] max-h-[120px] text-base placeholder-neutral-500 overflow-y-hidden whitespace-pre-wrap break-words rounded-lg border border-gray-300 dark:border-gray-700 scrollbar-hide"
+              style={{ 
+                wordWrap: 'break-word', 
+                overflowWrap: 'break-word', 
+                whiteSpace: 'pre-wrap', 
+                scrollbarWidth: 'none', /* Firefox */
+                msOverflowStyle: 'none', /* IE and Edge */
+                WebkitOverflowScrolling: 'touch'
+              }}
               disabled={isLoading}
             />
             
