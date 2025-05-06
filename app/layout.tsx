@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     description: 'A clever girl that wants to learn.',
     url: 'https://kiki.redbuilder.io',
     siteName: 'Kiki',
-    images: [{ url: 'https://kiki.redbuilder.io/public/og.png' }]
+    images: [{ url: 'https://kiki.redbuilder.io/og.png' }]
   },
   viewport: {
     width: "device-width",
