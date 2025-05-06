@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   themeColor: "#f97316",
   icons: {
     icon: "/favicon.ico",
-    apple: "/icons/apple-touch-icon.png"
+    apple: "/icons/kiki-192.png"
   },
   appleWebApp: {
     capable: true,
