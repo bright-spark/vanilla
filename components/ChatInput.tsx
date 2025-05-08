@@ -95,25 +95,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </div>
 
-      {/* Mobile floating action button */}
-      <div className="fixed bottom-6 right-6 hidden sm:flex md:hidden z-50">
-        <button
-          onClick={() => {
-            // Show the mobile input modal
-            const mobileInputArea = document.getElementById('mobile-input-area');
-            if (mobileInputArea) {
-              mobileInputArea.classList.remove('hidden');
-              mobileInputArea.classList.add('flex');
-              setTimeout(() => {
-                inputRef.current?.focus();
-              }, 100);
-            }
-          }}
-          className={`rounded-full w-16 h-16 flex items-center justify-center shadow-lg transition-colors ${theme === 'dark' ? 'bg-[#f97316]' : 'bg-orange-500'}`}
-        >
-          <span className="w-8 h-8 text-white">+</span>
-        </button>
-      </div>
+      {/* Mobile input is now handled by MobileInput.tsx component */}
     </>
   );
 };
